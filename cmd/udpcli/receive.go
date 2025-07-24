@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/1cbyc/goudpkit"
+	"github.com/1cbyc/go-udp-kit/goudpkit"
 	"github.com/spf13/cobra"
 )
 

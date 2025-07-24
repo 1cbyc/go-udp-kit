@@ -31,7 +31,7 @@ This project is a sophisticated, modular UDP (User Datagram Protocol) framework 
 Install the Go UDP Kit using:
 
 ```
-go get github.com/1cbyc/goudpkit
+go get github.com/1cbyc/go-udp-kit/goudpkit
 ```
 
 ## Usage
@@ -46,7 +46,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/1cbyc/goudpkit"
+	"github.com/1cbyc/go-udp-kit/goudpkit"
 )
 
 func main() {
@@ -210,7 +210,7 @@ The kit provides built-in Prometheus metrics for packets sent, received, dropped
 ### Register and Export Metrics
 
 ```go
-import "github.com/1cbyc/goudpkit"
+import "github.com/1cbyc/go-udp-kit/goudpkit"
 
 func main() {
 	goudpkit.RegisterMetrics()
