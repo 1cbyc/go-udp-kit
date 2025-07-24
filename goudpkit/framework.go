@@ -186,3 +186,7 @@ func (kit *GoUDPKit) GetStats() Stats {
 func (kit *GoUDPKit) Close() error {
 	return kit.conn.Close()
 }
+
+func (kit *GoUDPKit) Conn() *net.UDPConn {
+	return kit.conn
+}
