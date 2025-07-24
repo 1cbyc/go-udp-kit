@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/1cbyc/udpframework"
+	"github.com/1cbyc/go-udp-kit/goudpkit"
 )
 
 func main() {
@@ -17,18 +17,18 @@ func main() {
 	msg := flag.String("msg", "hello", "Message to send (send mode)")
 	flag.Parse()
 
-	retryConfig := udpframework.RetryConfig{MaxRetries: 3, BaseTimeout: 100 * time.Millisecond, BackoffRate: 1.5}
-	qosConfig := udpframework.QoSConfig{PriorityLevels: 1, PriorityQueues: make([][]udpframework.Packet, 1)}
-	bufferConfig := udpframework.BufferConfig{MaxBufferSize: 1024, FlushInterval: 2 * time.Second}
+	retryConfig := goudpkit.RetryConfig{MaxRetries: 3, BaseTimeout: 100 * time.Millisecond, BackoffRate: 1.5}
+	qosConfig := goudpkit.QoSConfig{PriorityLevels: 1, PriorityQueues: make([][]goudpkit.Packet, 1)}
+	bufferConfig := goudpkit.BufferConfig{MaxBufferSize: 1024, FlushInterval: 2 * time.Second}
 
 	if *mode == "receive" {
-		uf, err := udpframework.UdGo(*addr, retryConfig, qosConfig, bufferConfig)
+		kit, err := goudpkit.NewGoUDPKit(*addr, retryConfig, qosConfig, bufferConfig)
 		if err != nil {
 			log.Fatal(err)
 		}
-		defer uf.Close()
+		defer kit.Close()
 		for {
-			data, remote, err := uf.ReceivePacket()
+			data, remote, err := kit.ReceivePacket()
 			if err != nil {
 				continue
 			}
@@ -38,17 +38,17 @@ func main() {
 			}
 		}
 	} else if *mode == "send" {
-		uf, err := udpframework.UdGo(":0", retryConfig, qosConfig, bufferConfig)
+		kit, err := goudpkit.NewGoUDPKit(":0", retryConfig, qosConfig, bufferConfig)
 		if err != nil {
 			log.Fatal(err)
 		}
-		defer uf.Close()
-		packet := udpframework.Packet{SequenceNumber: 1, Priority: 0, Data: []byte(*msg), Timestamp: time.Now()}
+		defer kit.Close()
+		packet := goudpkit.Packet{SequenceNumber: 1, Priority: 0, Data: []byte(*msg), Timestamp: time.Now()}
 		destAddr, err := net.ResolveUDPAddr("udp", *addr)
 		if err != nil {
 			log.Fatal(err)
 		}
-		err = uf.SendPacket(packet, destAddr)
+		err = kit.SendPacket(packet, destAddr)
 		if err != nil {
 			log.Fatal(err)
 		}

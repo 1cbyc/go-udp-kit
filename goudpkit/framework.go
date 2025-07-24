@@ -6,8 +6,6 @@ import (
 	"net"
 	"sync"
 	"time"
-
-	"github.com/1cbyc/goudpkit"
 )
 
 type GoUDPKit struct {
@@ -82,11 +80,9 @@ func (kit *GoUDPKit) SendPacket(packet Packet, destAddr *net.UDPAddr) error {
 			err := kit.sendWithRetry(p, destAddr)
 			if err != nil {
 				kit.stats.PacketsDropped++
-				goudpkit.IncPacketsDropped()
 				return err
 			}
 			kit.stats.PacketsSent++
-			goudpkit.IncPacketsSent()
 		}
 	}
 
@@ -102,7 +98,6 @@ func (kit *GoUDPKit) sendWithRetry(packet Packet, destAddr *net.UDPAddr) error {
 		}
 
 		kit.stats.RetryCount++
-		goudpkit.IncRetryCount()
 		time.Sleep(timeout)
 		timeout = time.Duration(float64(timeout) * kit.retryConfig.BackoffRate)
 	}
@@ -118,7 +113,6 @@ func (kit *GoUDPKit) ReceivePacket() ([]byte, *net.UDPAddr, error) {
 	}
 
 	kit.stats.PacketsReceived++
-	goudpkit.IncPacketsReceived()
 
 	packet := Packet{
 		SequenceNumber: binary.BigEndian.Uint32(buffer[:4]),
@@ -179,7 +173,6 @@ func (kit *GoUDPKit) flushBuffer() {
 		if now.Sub(packet.Timestamp) > kit.bufferConfig.FlushInterval {
 			delete(kit.reassemblyQueue, seq)
 			kit.stats.PacketsDropped++
-			goudpkit.IncPacketsDropped()
 		}
 	}
 }

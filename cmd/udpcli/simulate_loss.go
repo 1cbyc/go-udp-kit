@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/1cbyc/udpframework"
+	"github.com/1cbyc/go-udp-kit/goudpkit"
 	"github.com/spf13/cobra"
 )
 
@@ -24,16 +24,16 @@ func init() {
 			}
 		},
 		Run: func(cmd *cobra.Command, args []string) {
-			retryConfig := udpframework.RetryConfig{MaxRetries: 1, BaseTimeout: 1, BackoffRate: 1.0}
-			qosConfig := udpframework.QoSConfig{PriorityLevels: 1, PriorityQueues: make([][]udpframework.Packet, 1)}
-			bufferConfig := udpframework.BufferConfig{MaxBufferSize: 1, FlushInterval: 1}
-			uf, _ := udpframework.UdGo(":0", retryConfig, qosConfig, bufferConfig)
-			defer uf.Close()
-			before := uf.GetStats().PacketsDropped
+			retryConfig := goudpkit.RetryConfig{MaxRetries: 1, BaseTimeout: 1, BackoffRate: 1.0}
+			qosConfig := goudpkit.QoSConfig{PriorityLevels: 1, PriorityQueues: make([][]goudpkit.Packet, 1)}
+			bufferConfig := goudpkit.BufferConfig{MaxBufferSize: 1, FlushInterval: 1}
+			kit, _ := goudpkit.NewGoUDPKit(":0", retryConfig, qosConfig, bufferConfig)
+			defer kit.Close()
+			before := kit.GetStats().PacketsDropped
 			for i := 0; i < count; i++ {
-				uf.SimulatePacketLoss(loss)
+				kit.SimulatePacketLoss(loss)
 			}
-			after := uf.GetStats().PacketsDropped
+			after := kit.GetStats().PacketsDropped
 			fmt.Printf("Simulated %d packets with %d%% loss: %d dropped\n", count, loss, after-before)
 		},
 	}

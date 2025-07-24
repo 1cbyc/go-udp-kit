@@ -9,7 +9,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/1cbyc/udpframework"
+	"github.com/1cbyc/go-udp-kit/goudpkit"
 )
 
 func main() {
@@ -18,23 +18,23 @@ func main() {
 	filePath := flag.String("file", "file.dat", "File path to send/receive")
 	flag.Parse()
 
-	retryConfig := udpframework.RetryConfig{MaxRetries: 3, BaseTimeout: 100 * time.Millisecond, BackoffRate: 1.5}
-	qosConfig := udpframework.QoSConfig{PriorityLevels: 1, PriorityQueues: make([][]udpframework.Packet, 1)}
-	bufferConfig := udpframework.BufferConfig{MaxBufferSize: 4096, FlushInterval: 2 * time.Second}
+	retryConfig := goudpkit.RetryConfig{MaxRetries: 3, BaseTimeout: 100 * time.Millisecond, BackoffRate: 1.5}
+	qosConfig := goudpkit.QoSConfig{PriorityLevels: 1, PriorityQueues: make([][]goudpkit.Packet, 1)}
+	bufferConfig := goudpkit.BufferConfig{MaxBufferSize: 4096, FlushInterval: 2 * time.Second}
 
 	if *mode == "receive" {
-		uf, err := udpframework.UdGo(*addr, retryConfig, qosConfig, bufferConfig)
+		kit, err := goudpkit.NewGoUDPKit(*addr, retryConfig, qosConfig, bufferConfig)
 		if err != nil {
 			log.Fatal(err)
 		}
-		defer uf.Close()
+		defer kit.Close()
 		f, err := os.Create(*filePath)
 		if err != nil {
 			log.Fatal(err)
 		}
 		defer f.Close()
 		fmt.Println("Waiting for file...")
-		data, err := uf.ReceiveBulkData(10000)
+		data, err := kit.ReceiveBulkData(10000)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -44,11 +44,11 @@ func main() {
 		}
 		fmt.Println("File received and written to", *filePath)
 	} else if *mode == "send" {
-		uf, err := udpframework.UdGo(":0", retryConfig, qosConfig, bufferConfig)
+		kit, err := goudpkit.NewGoUDPKit(":0", retryConfig, qosConfig, bufferConfig)
 		if err != nil {
 			log.Fatal(err)
 		}
-		defer uf.Close()
+		defer kit.Close()
 		f, err := os.Open(*filePath)
 		if err != nil {
 			log.Fatal(err)
@@ -68,7 +68,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		err = uf.SendBulkData(data, 1024, destAddr)
+		err = kit.SendBulkData(data, 1024, destAddr)
 		if err != nil {
 			log.Fatal(err)
 		}

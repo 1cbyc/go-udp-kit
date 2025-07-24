@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/1cbyc/udpframework"
+	"github.com/1cbyc/go-udp-kit/goudpkit"
 	"github.com/spf13/cobra"
 )
 
@@ -25,27 +25,27 @@ func init() {
 			}
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			retryConfig := udpframework.RetryConfig{MaxRetries: 3, BaseTimeout: 100 * time.Millisecond, BackoffRate: 1.5}
-			qosConfig := udpframework.QoSConfig{PriorityLevels: 1, PriorityQueues: make([][]udpframework.Packet, 1)}
-			bufferConfig := udpframework.BufferConfig{MaxBufferSize: 1024, FlushInterval: 2 * time.Second}
-			uf, err := udpframework.UdGo(addr, retryConfig, qosConfig, bufferConfig)
+			retryConfig := goudpkit.RetryConfig{MaxRetries: 3, BaseTimeout: 100 * time.Millisecond, BackoffRate: 1.5}
+			qosConfig := goudpkit.QoSConfig{PriorityLevels: 1, PriorityQueues: make([][]goudpkit.Packet, 1)}
+			bufferConfig := goudpkit.BufferConfig{MaxBufferSize: 1024, FlushInterval: 2 * time.Second}
+			kit, err := goudpkit.NewGoUDPKit(addr, retryConfig, qosConfig, bufferConfig)
 			if err != nil {
 				return err
 			}
-			defer uf.Close()
+			defer kit.Close()
 
 			deadline := time.Now().Add(time.Duration(timeout) * time.Second)
 			for {
 				if timeout > 0 && time.Now().After(deadline) {
 					break
 				}
-				uf.Conn().SetReadDeadline(time.Now().Add(1 * time.Second))
-				_, _, err := uf.ReceivePacket()
+				kit.Conn().SetReadDeadline(time.Now().Add(1 * time.Second))
+				_, _, err := kit.ReceivePacket()
 				if err != nil {
 					continue
 				}
 			}
-			stats := uf.GetStats()
+			stats := kit.GetStats()
 			fmt.Printf("Packets Sent: %d\nPackets Received: %d\nPackets Dropped: %d\nRetry Count: %d\n", stats.PacketsSent, stats.PacketsReceived, stats.PacketsDropped, stats.RetryCount)
 			return nil
 		},
