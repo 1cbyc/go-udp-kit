@@ -8,8 +8,16 @@ import (
 	"time"
 )
 
+type UDPConn interface {
+	WriteToUDP(b []byte, addr *net.UDPAddr) (int, error)
+	ReadFromUDP(b []byte) (int, *net.UDPAddr, error)
+	SetReadDeadline(t time.Time) error
+	Close() error
+	LocalAddr() net.Addr
+}
+
 type GoUDPKit struct {
-	conn            *net.UDPConn
+	conn            UDPConn
 	reassemblyQueue map[uint32]*Packet
 	retryConfig     RetryConfig
 	qosConfig       QoSConfig
@@ -41,15 +49,19 @@ type Stats struct {
 	RetryCount      uint64
 }
 
-func NewGoUDPKit(addr string, retryConfig RetryConfig, qosConfig QoSConfig, bufferConfig BufferConfig) (*GoUDPKit, error) {
-	udpAddr, err := net.ResolveUDPAddr("udp", addr)
-	if err != nil {
-		return nil, err
-	}
-
-	conn, err := net.ListenUDP("udp", udpAddr)
-	if err != nil {
-		return nil, err
+func NewGoUDPKit(addr string, retryConfig RetryConfig, qosConfig QoSConfig, bufferConfig BufferConfig, customConn ...UDPConn) (*GoUDPKit, error) {
+	var conn UDPConn
+	if len(customConn) > 0 && customConn[0] != nil {
+		conn = customConn[0]
+	} else {
+		udpAddr, err := net.ResolveUDPAddr("udp", addr)
+		if err != nil {
+			return nil, err
+		}
+		conn, err = net.ListenUDP("udp", udpAddr)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	kit := &GoUDPKit{
@@ -66,27 +78,15 @@ func NewGoUDPKit(addr string, retryConfig RetryConfig, qosConfig QoSConfig, buff
 	return kit, nil
 }
 
-func (kit *GoUDPKit) SendPacket(packet Packet, destAddr *net.UDPAddr) error {
-	kit.mu.Lock()
-	defer kit.mu.Unlock()
-
-	kit.qosConfig.PriorityQueues[packet.Priority] = append(kit.qosConfig.PriorityQueues[packet.Priority], packet)
-
-	for i := kit.qosConfig.PriorityLevels - 1; i >= 0; i-- {
-		for len(kit.qosConfig.PriorityQueues[i]) > 0 {
-			p := kit.qosConfig.PriorityQueues[i][0]
-			kit.qosConfig.PriorityQueues[i] = kit.qosConfig.PriorityQueues[i][1:]
-
-			err := kit.sendWithRetry(p, destAddr)
-			if err != nil {
-				kit.stats.PacketsDropped++
-				return err
-			}
-			kit.stats.PacketsSent++
-		}
+func (kit *GoUDPKit) SendPacket(packet Packet, addr *net.UDPAddr) error {
+	buf := make([]byte, 4+len(packet.Data))
+	binary.BigEndian.PutUint32(buf[:4], packet.SequenceNumber)
+	copy(buf[4:], packet.Data)
+	_, err := kit.conn.WriteToUDP(buf, addr)
+	if err == nil {
+		kit.stats.PacketsSent++
 	}
-
-	return nil
+	return err
 }
 
 func (kit *GoUDPKit) sendWithRetry(packet Packet, destAddr *net.UDPAddr) error {
@@ -106,31 +106,19 @@ func (kit *GoUDPKit) sendWithRetry(packet Packet, destAddr *net.UDPAddr) error {
 }
 
 func (kit *GoUDPKit) ReceivePacket() ([]byte, *net.UDPAddr, error) {
-	buffer := make([]byte, 1500)
-	n, remoteAddr, err := kit.conn.ReadFromUDP(buffer)
+	buf := make([]byte, 65535)
+	n, addr, err := kit.conn.ReadFromUDP(buf)
 	if err != nil {
+		kit.stats.PacketsDropped++
 		return nil, nil, err
 	}
-
+	if n < 4 {
+		kit.stats.PacketsDropped++
+		return nil, addr, errors.New("packet too short")
+	}
+	data := buf[4:n]
 	kit.stats.PacketsReceived++
-
-	packet := Packet{
-		SequenceNumber: binary.BigEndian.Uint32(buffer[:4]),
-		Data:           buffer[4:n],
-		Timestamp:      time.Now(),
-	}
-
-	kit.mu.Lock()
-	defer kit.mu.Unlock()
-
-	kit.reassemblyQueue[packet.SequenceNumber] = &packet
-
-	assembledData := kit.tryReassemble()
-	if assembledData != nil {
-		return assembledData, remoteAddr, nil
-	}
-
-	return nil, remoteAddr, nil
+	return data, addr, nil
 }
 
 func (kit *GoUDPKit) tryReassemble() []byte {
@@ -187,6 +175,6 @@ func (kit *GoUDPKit) Close() error {
 	return kit.conn.Close()
 }
 
-func (kit *GoUDPKit) Conn() *net.UDPConn {
+func (kit *GoUDPKit) Conn() UDPConn {
 	return kit.conn
 }

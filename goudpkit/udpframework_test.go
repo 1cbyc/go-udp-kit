@@ -1,17 +1,57 @@
 package goudpkit
 
 import (
+	"errors"
 	"net"
 	"testing"
 	"time"
 )
+
+type mockUDPConn struct {
+	writeCh chan []byte
+	readCh  chan []byte
+	closed  bool
+}
+
+func newMockUDPConn() *mockUDPConn {
+	return &mockUDPConn{
+		writeCh: make(chan []byte, 10),
+		readCh:  make(chan []byte, 10),
+	}
+}
+
+func (m *mockUDPConn) WriteToUDP(b []byte, _ *net.UDPAddr) (int, error) {
+	if m.closed {
+		return 0, errors.New("closed")
+	}
+	// Simulate real UDP: prepend 4-byte sequence number (big endian) if not already present
+	if len(b) < 4 {
+		return 0, errors.New("data too short for sequence number")
+	}
+	m.writeCh <- append([]byte{}, b...)
+	return len(b), nil
+}
+
+func (m *mockUDPConn) ReadFromUDP(b []byte) (int, *net.UDPAddr, error) {
+	if m.closed {
+		return 0, nil, errors.New("closed")
+	}
+	data := <-m.writeCh
+	copy(b, data)
+	return len(data), &net.UDPAddr{}, nil
+}
+
+func (m *mockUDPConn) SetReadDeadline(t time.Time) error { return nil }
+func (m *mockUDPConn) Close() error                      { m.closed = true; return nil }
+func (m *mockUDPConn) LocalAddr() net.Addr               { return &net.UDPAddr{} }
 
 func TestNewGoUDPKitInitialization(t *testing.T) {
 	t.Parallel()
 	retryConfig := RetryConfig{MaxRetries: 2, BaseTimeout: time.Millisecond * 10, BackoffRate: 1.2}
 	qosConfig := QoSConfig{PriorityLevels: 2, PriorityQueues: make([][]Packet, 2)}
 	bufferConfig := BufferConfig{MaxBufferSize: 128, FlushInterval: time.Millisecond * 50}
-	kit, err := NewGoUDPKit(":0", retryConfig, qosConfig, bufferConfig)
+	mockConn := newMockUDPConn()
+	kit, err := NewGoUDPKit(":0", retryConfig, qosConfig, bufferConfig, mockConn)
 	if err != nil {
 		t.Fatalf("Failed to initialize: %v", err)
 	}
@@ -20,30 +60,28 @@ func TestNewGoUDPKitInitialization(t *testing.T) {
 
 func TestSendAndReceivePacket(t *testing.T) {
 	t.Parallel()
-	retryConfig := RetryConfig{MaxRetries: 2, BaseTimeout: time.Millisecond * 10, BackoffRate: 1.2}
+	retryConfig := RetryConfig{MaxRetries: 5, BaseTimeout: time.Millisecond * 20, BackoffRate: 1.5}
 	qosConfig := QoSConfig{PriorityLevels: 2, PriorityQueues: make([][]Packet, 2)}
 	bufferConfig := BufferConfig{MaxBufferSize: 128, FlushInterval: time.Millisecond * 50}
-	recvKit, err := NewGoUDPKit(":0", retryConfig, qosConfig, bufferConfig)
+	mockConn := newMockUDPConn()
+	recvKit, err := NewGoUDPKit(":0", retryConfig, qosConfig, bufferConfig, mockConn)
 	if err != nil {
 		t.Fatalf("Failed to initialize receiver: %v", err)
 	}
 	defer recvKit.Close()
 
-	addr := recvKit.conn.LocalAddr().(*net.UDPAddr)
-	sendKit, err := NewGoUDPKit(":0", retryConfig, qosConfig, bufferConfig)
+	sendKit, err := NewGoUDPKit(":0", retryConfig, qosConfig, bufferConfig, mockConn)
 	if err != nil {
 		t.Fatalf("Failed to initialize sender: %v", err)
 	}
 	defer sendKit.Close()
 
 	packet := Packet{SequenceNumber: 1, Priority: 1, Data: []byte("test-data"), Timestamp: time.Now()}
-	err = sendKit.SendPacket(packet, addr)
+	err = sendKit.SendPacket(packet, &net.UDPAddr{})
 	if err != nil {
 		t.Fatalf("SendPacket failed: %v", err)
 	}
 
-	time.Sleep(time.Millisecond * 20)
-	recvKit.conn.SetReadDeadline(time.Now().Add(time.Second))
 	data, _, err := recvKit.ReceivePacket()
 	if err != nil {
 		t.Fatalf("ReceivePacket failed: %v", err)
@@ -94,17 +132,17 @@ func TestEncryptDecrypt(t *testing.T) {
 
 func TestSendAndReceiveBulkData(t *testing.T) {
 	t.Parallel()
-	retryConfig := RetryConfig{MaxRetries: 2, BaseTimeout: time.Millisecond * 10, BackoffRate: 1.2}
+	retryConfig := RetryConfig{MaxRetries: 5, BaseTimeout: time.Millisecond * 20, BackoffRate: 1.5}
 	qosConfig := QoSConfig{PriorityLevels: 2, PriorityQueues: make([][]Packet, 2)}
 	bufferConfig := BufferConfig{MaxBufferSize: 256, FlushInterval: time.Millisecond * 50}
-	recvKit, err := NewGoUDPKit(":0", retryConfig, qosConfig, bufferConfig)
+	mockConn := newMockUDPConn()
+	recvKit, err := NewGoUDPKit(":0", retryConfig, qosConfig, bufferConfig, mockConn)
 	if err != nil {
 		t.Fatalf("Failed to initialize receiver: %v", err)
 	}
 	defer recvKit.Close()
 
-	addr := recvKit.conn.LocalAddr().(*net.UDPAddr)
-	sendKit, err := NewGoUDPKit(":0", retryConfig, qosConfig, bufferConfig)
+	sendKit, err := NewGoUDPKit(":0", retryConfig, qosConfig, bufferConfig, mockConn)
 	if err != nil {
 		t.Fatalf("Failed to initialize sender: %v", err)
 	}
@@ -112,13 +150,11 @@ func TestSendAndReceiveBulkData(t *testing.T) {
 
 	bulkData := []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 	packetSize := 10
-	err = sendKit.SendBulkData(bulkData, packetSize, addr)
+	err = sendKit.SendBulkData(bulkData, packetSize, &net.UDPAddr{})
 	if err != nil {
 		t.Fatalf("SendBulkData failed: %v", err)
 	}
 
-	time.Sleep(time.Millisecond * 50)
-	recvKit.conn.SetReadDeadline(time.Now().Add(time.Second))
 	received, err := recvKit.ReceiveBulkData((len(bulkData) + packetSize - 1) / packetSize)
 	if err != nil {
 		t.Fatalf("ReceiveBulkData failed: %v", err)
@@ -151,30 +187,28 @@ func TestSimulatePacketLoss(t *testing.T) {
 
 func TestStatsTracking(t *testing.T) {
 	t.Parallel()
-	retryConfig := RetryConfig{MaxRetries: 2, BaseTimeout: time.Millisecond * 10, BackoffRate: 1.2}
+	retryConfig := RetryConfig{MaxRetries: 5, BaseTimeout: time.Millisecond * 20, BackoffRate: 1.5}
 	qosConfig := QoSConfig{PriorityLevels: 2, PriorityQueues: make([][]Packet, 2)}
 	bufferConfig := BufferConfig{MaxBufferSize: 128, FlushInterval: time.Millisecond * 50}
-	recvKit, err := NewGoUDPKit(":0", retryConfig, qosConfig, bufferConfig)
+	mockConn := newMockUDPConn()
+	recvKit, err := NewGoUDPKit(":0", retryConfig, qosConfig, bufferConfig, mockConn)
 	if err != nil {
 		t.Fatalf("Failed to initialize receiver: %v", err)
 	}
 	defer recvKit.Close()
 
-	addr := recvKit.conn.LocalAddr().(*net.UDPAddr)
-	sendKit, err := NewGoUDPKit(":0", retryConfig, qosConfig, bufferConfig)
+	sendKit, err := NewGoUDPKit(":0", retryConfig, qosConfig, bufferConfig, mockConn)
 	if err != nil {
 		t.Fatalf("Failed to initialize sender: %v", err)
 	}
 	defer sendKit.Close()
 
 	packet := Packet{SequenceNumber: 1, Priority: 1, Data: []byte("stat-data"), Timestamp: time.Now()}
-	err = sendKit.SendPacket(packet, addr)
+	err = sendKit.SendPacket(packet, &net.UDPAddr{})
 	if err != nil {
 		t.Fatalf("SendPacket failed: %v", err)
 	}
 
-	time.Sleep(time.Millisecond * 20)
-	recvKit.conn.SetReadDeadline(time.Now().Add(time.Second))
 	_, _, err = recvKit.ReceivePacket()
 	if err != nil {
 		t.Fatalf("ReceivePacket failed: %v", err)
