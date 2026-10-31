@@ -1,3 +1,5 @@
+> **Licensing update (31 October 2026):** The current policy requires prior written permission for reuse and a separate agreement for AI training. See [LICENSE](LICENSE). Earlier grants remain valid for previously licensed material; [LICENSE.previous](LICENSE.previous) preserves those terms. Any older license descriptions below describe the previous policy. Contact [ei@nsisong.com](mailto:ei@nsisong.com).
+
 # Go UDP Kit
 
 This project is a sophisticated, modular UDP (User Datagram Protocol) framework in Go, featuring automated packet reassembly, customizable retry and timeout mechanisms, and packet prioritization with Quality of Service (QoS) support.
